@@ -41,8 +41,9 @@ typedef void (*poke_func)(VARIABLE_TYPE, VARIABLE_TYPE);
 /*
  * Classic 8-bit BASIC memory layout:
  *   LOW ADDRESSES (start of buffer):
- *     int32_t gosub_depth at offset 0
- *     int32_t for_depth at offset 4
+ *     int32_t resume_offset at offset 0 (tokenizer position for resume)
+ *     int32_t gosub_depth at offset 4
+ *     int32_t for_depth at offset 8
  *     int32_t gosub_stack[UBASIC_MAX_GOSUB_STACK_DEPTH]
  *     struct for_state for_stack[UBASIC_MAX_FOR_STACK_DEPTH]
  *     program bytes (NUL-terminated, grows upward)
@@ -66,19 +67,14 @@ typedef struct for_state {
 } for_state;
 
 /* Control state at low addresses */
-#define UBASIC_MEM_GOSUB_DEPTH_OFFSET 0
-#define UBASIC_MEM_FOR_DEPTH_OFFSET   4
-#define UBASIC_MEM_GOSUB_STACK_OFFSET 8
+#define UBASIC_MEM_RESUME_OFFSET      0
+#define UBASIC_MEM_GOSUB_DEPTH_OFFSET 4
+#define UBASIC_MEM_FOR_DEPTH_OFFSET   8
+#define UBASIC_MEM_GOSUB_STACK_OFFSET 12
 #define UBASIC_MEM_FOR_STACK_OFFSET \
   (UBASIC_MEM_GOSUB_STACK_OFFSET + UBASIC_MAX_GOSUB_STACK_DEPTH * (int)sizeof(int32_t))
 #define UBASIC_MEM_PROGRAM_OFFSET \
   (UBASIC_MEM_FOR_STACK_OFFSET + UBASIC_MAX_FOR_STACK_DEPTH * (int)sizeof(for_state))
-
-/* Legacy offset for old ubasic_init */
-#define UBASIC_MEM_VARIABLES_OFFSET_LEGACY \
-  (UBASIC_MEM_FOR_STACK_OFFSET + UBASIC_MAX_FOR_STACK_DEPTH * (int)sizeof(for_state))
-#define UBASIC_MEM_PROGRAM_OFFSET_LEGACY \
-  (UBASIC_MEM_VARIABLES_OFFSET_LEGACY + UBASIC_VARIABLE_COUNT * (int)sizeof(VARIABLE_TYPE))
 
 /* Variables at top (calculated at runtime) */
 #define UBASIC_VARIABLES_SIZE (UBASIC_VARIABLE_COUNT * (int)sizeof(VARIABLE_TYPE))
@@ -91,6 +87,7 @@ __declspec(dllexport) void ubasic_reset(void);  /* Clears variables */
 __declspec(dllexport) void ubasic_run(void);
 __declspec(dllexport) int ubasic_finished(void);
 __declspec(dllexport) void ubasic_load_program(const char *program);  /* Preserves vars */
+__declspec(dllexport) void ubasic_resume(void);  /* Resume from saved position in memory */
 
 // Callback
 

@@ -55,6 +55,9 @@
     <None Update="Samples\hello_world.bas">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="Samples\restore.bas">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="Samples\test.bas">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

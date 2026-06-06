@@ -44,7 +44,12 @@ namespace uBasicApp
             exitToolStripMenuItem = new ToolStripMenuItem();
             actionToolStripMenuItem = new ToolStripMenuItem();
             startToolStripMenuItem = new ToolStripMenuItem();
+            pauseToolStripMenuItem = new ToolStripMenuItem();
+            resumeToolStripMenuItem = new ToolStripMenuItem();
             stopToolStripMenuItem = new ToolStripMenuItem();
+            toolStripSeparator3 = new ToolStripSeparator();
+            saveToolStripMenuItem = new ToolStripMenuItem();
+            loadToolStripMenuItem = new ToolStripMenuItem();
             formatToolStripMenuItem = new ToolStripMenuItem();
             fontToolStripMenuItem = new ToolStripMenuItem();
             colorToolStripMenuItem = new ToolStripMenuItem();
@@ -103,7 +108,7 @@ namespace uBasicApp
             // 
             // actionToolStripMenuItem
             // 
-            actionToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { startToolStripMenuItem, stopToolStripMenuItem });
+            actionToolStripMenuItem.DropDownItems.AddRange(new ToolStripItem[] { startToolStripMenuItem, pauseToolStripMenuItem, resumeToolStripMenuItem, stopToolStripMenuItem, toolStripSeparator3, saveToolStripMenuItem, loadToolStripMenuItem });
             actionToolStripMenuItem.Name = "actionToolStripMenuItem";
             actionToolStripMenuItem.Size = new Size(102, 38);
             actionToolStripMenuItem.Text = "Action";
@@ -111,16 +116,49 @@ namespace uBasicApp
             // startToolStripMenuItem
             // 
             startToolStripMenuItem.Name = "startToolStripMenuItem";
-            startToolStripMenuItem.Size = new Size(195, 44);
+            startToolStripMenuItem.Size = new Size(231, 44);
             startToolStripMenuItem.Text = "Start";
             startToolStripMenuItem.Click += ActionStartMenuItem_Click;
+            // 
+            // pauseToolStripMenuItem
+            // 
+            pauseToolStripMenuItem.Name = "pauseToolStripMenuItem";
+            pauseToolStripMenuItem.Size = new Size(231, 44);
+            pauseToolStripMenuItem.Text = "Pause";
+            pauseToolStripMenuItem.Click += pauseToolStripMenuItem_Click;
+            // 
+            // resumeToolStripMenuItem
+            // 
+            resumeToolStripMenuItem.Name = "resumeToolStripMenuItem";
+            resumeToolStripMenuItem.Size = new Size(231, 44);
+            resumeToolStripMenuItem.Text = "Resume";
+            resumeToolStripMenuItem.Click += resumeToolStripMenuItem_Click;
             // 
             // stopToolStripMenuItem
             // 
             stopToolStripMenuItem.Name = "stopToolStripMenuItem";
-            stopToolStripMenuItem.Size = new Size(195, 44);
+            stopToolStripMenuItem.Size = new Size(231, 44);
             stopToolStripMenuItem.Text = "Stop";
             stopToolStripMenuItem.Click += ActionStopMenuItem_Click;
+            // 
+            // toolStripSeparator3
+            // 
+            toolStripSeparator3.Name = "toolStripSeparator3";
+            toolStripSeparator3.Size = new Size(228, 6);
+            // 
+            // saveToolStripMenuItem
+            // 
+            saveToolStripMenuItem.Name = "saveToolStripMenuItem";
+            saveToolStripMenuItem.Size = new Size(231, 44);
+            saveToolStripMenuItem.Text = "Save";
+            saveToolStripMenuItem.Click += saveToolStripMenuItem_Click;
+            // 
+            // loadToolStripMenuItem
+            // 
+            loadToolStripMenuItem.Name = "loadToolStripMenuItem";
+            loadToolStripMenuItem.Size = new Size(231, 44);
+            loadToolStripMenuItem.Text = "Load";
+            loadToolStripMenuItem.Click += loadToolStripMenuItem_Click;
             // 
             // formatToolStripMenuItem
             // 
@@ -193,6 +231,11 @@ namespace uBasicApp
         private ToolStripMenuItem actionToolStripMenuItem;
         private ToolStripMenuItem startToolStripMenuItem;
         private ToolStripMenuItem stopToolStripMenuItem;
+        private ToolStripSeparator toolStripSeparator3;
+        private ToolStripMenuItem saveToolStripMenuItem;
+        private ToolStripMenuItem loadToolStripMenuItem;
+        private ToolStripMenuItem pauseToolStripMenuItem;
+        private ToolStripMenuItem resumeToolStripMenuItem;
     }
 }
 

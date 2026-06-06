@@ -31,7 +31,6 @@
 #define DEBUG 0
 #define VERBOSE 0
 
-
 #if DEBUG
 #define DEBUG_PRINTF(...)  printf(__VA_ARGS__)
 #else
@@ -314,17 +313,12 @@ char const *tokenizer_pos(void){
     return ptr;
 }
 
+/*---------------------------------------------------------------------------*/
 char const *tokenizer_start(void) {
 	return startptr;
 }
 
-//char* tokenizer_token_name(int token){
-//	struct keyword_token kt;
-//	kt = keywords[token];
-//	char* name = kt.keyword;
-//	return(name);
-//}
-
+/*---------------------------------------------------------------------------*/
 char *tokenizer_token_name(int token) {
     for (int i = 0; tokens[i].keyword != NULL; i++) {
         if (tokens[i].token == token) {

@@ -68,6 +68,7 @@ static char string[MAX_STRINGLEN];
 
 static uint8_t *mem_base = NULL;
 static size_t mem_capacity_bytes = 0;
+static int32_t *resume_offset_cell = NULL;
 static int32_t *gosub_depth_cell = NULL;
 static int32_t *for_depth_cell = NULL;
 static int32_t *gosub_stack_mem = NULL;
@@ -79,6 +80,7 @@ struct line_index {
   char const *program_text_position;
   struct line_index *next;
 };
+
 struct line_index *line_index_head = NULL;
 struct line_index *line_index_current = NULL;
 
@@ -111,11 +113,12 @@ void emit(const char* value) {
   }
 }
 /*---------------------------------------------------------------------------*/
-void ubasic_init_sized(uint8_t *memory, size_t memory_bytes) {
+__declspec(dllexport) void ubasic_init(uint8_t *memory, uint32_t memory_bytes) {
   size_t variables_offset;
   
   mem_base = memory;
   mem_capacity_bytes = memory_bytes;
+  resume_offset_cell = (int32_t *)(memory + UBASIC_MEM_RESUME_OFFSET);
   gosub_depth_cell = (int32_t *)(memory + UBASIC_MEM_GOSUB_DEPTH_OFFSET);
   for_depth_cell = (int32_t *)(memory + UBASIC_MEM_FOR_DEPTH_OFFSET);
   gosub_stack_mem = (int32_t *)(memory + UBASIC_MEM_GOSUB_STACK_OFFSET);
@@ -129,29 +132,12 @@ void ubasic_init_sized(uint8_t *memory, size_t memory_bytes) {
   index_free();
   tokenizer_init(program_ptr);
   #if VERBOSE
-    DEBUG_PRINTF("ubasic_init_sized: Variables at offset %zu (top of memory).\n", variables_offset);
+    DEBUG_PRINTF("ubasic_init: Variables at offset %zu (top of memory).\n", variables_offset);
   #endif
 }
 /*---------------------------------------------------------------------------*/
-void ubasic_init(uint8_t *memory) {
-  /* Legacy: assumes old layout with variables after control state */
-  mem_base = memory;
-  mem_capacity_bytes = 0;
-  gosub_depth_cell = (int32_t *)(memory + UBASIC_MEM_GOSUB_DEPTH_OFFSET);
-  for_depth_cell = (int32_t *)(memory + UBASIC_MEM_FOR_DEPTH_OFFSET);
-  gosub_stack_mem = (int32_t *)(memory + UBASIC_MEM_GOSUB_STACK_OFFSET);
-  for_stack = (for_state *)(memory + UBASIC_MEM_FOR_STACK_OFFSET);
-  variables_mem = (VARIABLE_TYPE *)(memory + UBASIC_MEM_VARIABLES_OFFSET_LEGACY);
-  program_ptr = (char const *)(memory + UBASIC_MEM_PROGRAM_OFFSET_LEGACY);
-  index_free();
-  tokenizer_init(program_ptr);
-  #if VERBOSE
-    DEBUG_PRINTF("ubasic_init: Using legacy layout.\n");
-  #endif
-}
-/*---------------------------------------------------------------------------*/
-void ubasic_init_peek_poke(uint8_t *memory, peek_func peek, poke_func poke) {
-  ubasic_init(memory);
+void ubasic_init_peek_poke(uint8_t *memory, uint32_t memory_bytes,peek_func peek, poke_func poke) {
+  ubasic_init(memory, memory_bytes);
   peek_function = peek;
   poke_function = poke;
   #if VERBOSE
@@ -162,6 +148,9 @@ void ubasic_init_peek_poke(uint8_t *memory, peek_func peek, poke_func poke) {
 static void reset_control_state(void) {
   index_free();
   tokenizer_reset();
+  if (resume_offset_cell != NULL) {
+    *resume_offset_cell = 0;
+  }
   if (gosub_depth_cell != NULL) {
     *gosub_depth_cell = 0;
   }
@@ -177,7 +166,7 @@ static void reset_control_state(void) {
   ended = 0;
 }
 /*---------------------------------------------------------------------------*/
-void ubasic_reset(void) {
+__declspec(dllexport) void ubasic_reset(void) {
   reset_control_state();
   /* Also clear variables on full reset */
   if (variables_mem != NULL) {
@@ -188,7 +177,7 @@ void ubasic_reset(void) {
   #endif
 }
 /*---------------------------------------------------------------------------*/
-void ubasic_load_program(const char *program) {
+__declspec(dllexport) void ubasic_load_program(const char *program) {
   size_t len;
   size_t available_program_bytes;
 
@@ -219,11 +208,11 @@ void ubasic_load_program(const char *program) {
   #endif
 }
 /*---------------------------------------------------------------------------*/
-int ubasic_finished(void){
+__declspec(dllexport) int ubasic_finished(void){
   return ended || tokenizer_finished();
 }
 /*---------------------------------------------------------------------------*/
-void ubasic_run(void){
+__declspec(dllexport) void ubasic_run(void){
   if(tokenizer_finished()) {
     #if VERBOSE
       DEBUG_PRINTF("ubasic_run: Program finished.\n");
@@ -233,8 +222,43 @@ void ubasic_run(void){
   line_statement();
 }
 /*---------------------------------------------------------------------------*/
-void ubasic_callback(Callback cb) {
+__declspec(dllexport) void ubasic_callback(Callback cb) {
     stored_callback = cb;
+}
+/*---------------------------------------------------------------------------*/
+static void save_position(void) {
+  const char *current_pos = tokenizer_pos();
+  const char *start_pos = tokenizer_start();
+  int32_t offset = (int32_t)(current_pos - start_pos);
+  
+  if (resume_offset_cell != NULL) {
+    *resume_offset_cell = offset;
+    #if VERBOSE
+      DEBUG_PRINTF("save_position: Saved offset %d.\n", offset);
+    #endif
+  }
+}
+/*---------------------------------------------------------------------------*/
+__declspec(dllexport) void ubasic_resume(void) {
+  int32_t offset;
+  const char *start_pos;
+  const char *resume_pos;
+  
+  if (resume_offset_cell == NULL || program_ptr == NULL) {
+    DEBUG_PRINTF("ubasic_resume: Not initialized.\n");
+    return;
+  }
+  
+  offset = *resume_offset_cell;
+  start_pos = tokenizer_start();
+  resume_pos = start_pos + offset;
+  
+  tokenizer_goto(resume_pos);
+  ended = 0;
+  
+  #if VERBOSE
+    DEBUG_PRINTF("ubasic_resume: Resumed from offset %d.\n", offset);
+  #endif
 }
 /*---------------------------------------------------------------------------*/
 // Private functions
@@ -736,6 +760,9 @@ static void statement(void){
 }
 /*---------------------------------------------------------------------------*/
 static void line_statement(void){
+  /* Save position before executing line for resume capability */
+  save_position();
+  
   #if VERBOSE
     DEBUG_PRINTF("----------- Line number %d ---------\n", tokenizer_num());
   #endif

@@ -1,19 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using TracerLibrary;
 
 namespace uBasicLibrary
 {
     public class uBasic : IInterpreter, IDisposable
     {
-
         [DllImport("ubasic.dll", CallingConvention = CallingConvention.Cdecl)]
         public static extern void ubasic_run();
 
-        // NOTE: change signatures to accept pointers so we can pin the managed buffer
         [DllImport("ubasic.dll", CallingConvention = CallingConvention.Cdecl)]
         public static extern void ubasic_init(byte[] memory, UInt32 size);
 
@@ -26,22 +26,26 @@ namespace uBasicLibrary
         [DllImport("ubasic.dll", CallingConvention = CallingConvention.Cdecl)]
         public static extern void ubasic_load_program(byte[] program);
 
+        [DllImport("ubasic.dll", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void ubasic_resume();
 
-        // Callback delegate (keeps string marshalling as before)
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         public delegate void CallbackDelegate(string valueStr);
 
         [DllImport("ubasic.dll", CallingConvention = CallingConvention.Cdecl)]
         public static extern void ubasic_callback(IntPtr cb);
 
-        // Store the delegate as an instance field to prevent it from being garbage collected
         private CallbackDelegate _callerDelegate;
+        private IDefaultIO _defaultIO = null;
+        private bool _ended = false;
+        private byte[] _program;
+        private byte[] _memory = new byte[4096];
+        private UInt32 _size = 0;
 
-        IDefaultIO _defaultIO = null;
-        bool _ended = false;
-        byte[] _program;
-        byte[] _memory = new byte[4096];
-        UInt32 _size = 0;
+        // Pause/resume state
+        private bool _paused = false;
+        private readonly object _pauseLock = new object();
+        #region Constructors
 
         public uBasic(byte[] memory, UInt32 size, IDefaultIO consoleIO)
         {
@@ -57,6 +61,36 @@ namespace uBasicLibrary
             IntPtr ptr = Marshal.GetFunctionPointerForDelegate(_callerDelegate);
             ubasic_callback(ptr);
         }
+        #endregion
+
+        #region Properties
+
+        public byte[] Memory
+        {
+            get
+            {
+                return _memory;
+            }
+            set
+            {
+                _memory = value;
+            }
+        }
+
+        public UInt32 Size
+        {
+            get
+            {
+                return _size;
+            }
+            set
+            {
+                _size = value;
+            }
+        }
+
+        #endregion
+        #region Methods
 
         public void Init()
         {
@@ -67,6 +101,15 @@ namespace uBasicLibrary
             Debug.WriteLine("Out uBasic.Init()");
         }
 
+        /// <summary>
+        /// Load a program into the interpreter. The program is passed as a byte array and will be
+        /// pinned in memory for the duration of the call to prevent GC movement. The native loader
+        /// will read the program from this buffer and copy it into its own internal memory structures.
+        /// After Load returns, the caller is free to modify or dispose of the original byte array without
+        /// affecting the loaded program in the interpreter. This design allows for efficient loading of
+        /// programs while ensuring memory safety and preventing issues with garbage collection.
+        /// </summary>
+        /// <param name="program"></param>
         public void Load(byte[] program)
         {
             Debug.WriteLine("In uBasic.Load()");
@@ -98,8 +141,7 @@ namespace uBasicLibrary
                 TraceInternal.TraceError("Run exception: " + ex.Message);
                 throw;
             }
-
-            Debug.WriteLine("Out uBasic.Run()");
+           Debug.WriteLine("Out uBasic.Run()");
         }
 
         public void Stop()
@@ -107,6 +149,14 @@ namespace uBasicLibrary
             Debug.WriteLine("In uBasic.Stop()");
             _ended = true;
             Debug.WriteLine("Out uBasic.Stop()");
+        }
+
+        public void Resume()
+        {
+            Debug.WriteLine("In uBasic.Resume()");
+            _ended = false;
+            ubasic_resume();
+            Debug.WriteLine("Out uBasic.Resume()");
         }
 
         public bool IsFinished()
@@ -140,5 +190,7 @@ namespace uBasicLibrary
             _memory = null;
             GC.SuppressFinalize(this);
         }
+
+        #endregion
     }
 }

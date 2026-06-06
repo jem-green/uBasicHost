@@ -15,10 +15,11 @@ namespace uBasicForm
         #region Fields
 
         // Prepare Basic
-        static IDefaultIO _textBoxIO = null;
+        static IDefaultIO _displayIO = null;
         IInterpreter _basic = null;
         int _pos = 0;
         bool _stopped = true;
+        bool _paused = false;
 
 
         // Declare a delegate used to communicate with the UI thread
@@ -43,8 +44,8 @@ namespace uBasicForm
 
             InitializeComponent();
 
-            _textBoxIO = new TextBoxIO();
-            _textBoxIO.TextReceived += new EventHandler<TextEventArgs>(OnMessageReceived);
+            _displayIO = new TextBoxIO();
+            _displayIO.TextReceived += new EventHandler<TextEventArgs>(OnMessageReceived);
 
             // Initialise the delegate
             this.updateTextDelegate = new UpdateTextDelegate(this.UpdateText);
@@ -78,13 +79,13 @@ namespace uBasicForm
                     _mruMenu.AddFile(filenamePath);
                     UInt32 size = 4096;
                     memory = new byte[size];
-                    _basic = new uBasic(memory, size, _textBoxIO);
+                    _basic = new uBasic(memory, size, _displayIO);
                     _basic.Init();
                     _basic.Load(program);
 
                     _stopped = false;
                     this._workerThread = new Thread(new ThreadStart(this.Run));
-                    _textBoxIO.Reset();
+                    _displayIO.Reset();
                     this._workerThread.Start();
                     consoleTextBox.Visible = true;
                     consoleTextBox.Enabled = true;
@@ -153,13 +154,13 @@ namespace uBasicForm
 
                     UInt32 size = 4096;
                     memory = new byte[size];
-                    _basic = new uBasic(memory, size, _textBoxIO);
+                    _basic = new uBasic(memory, size, _displayIO);
                     _basic.Init();
                     _basic.Load(program);
 
                     _stopped = false;
                     this._workerThread = new Thread(new ThreadStart(this.Run));
-                    _textBoxIO.Reset();
+                    _displayIO.Reset();
                     this._workerThread.Start();
                     consoleTextBox.Visible = true;
                     consoleTextBox.Enabled = true;
@@ -177,7 +178,7 @@ namespace uBasicForm
 
         private void UpdateText()
         {
-            string output = _textBoxIO.Output;
+            string output = _displayIO.Output;
             if (output.Length > 0)
             {
                 this.consoleTextBox.AppendText(output);
@@ -185,9 +186,9 @@ namespace uBasicForm
                 double position = consoleTextBox.TextLength;
                 double width = consoleTextBox.Width / 8;   // assume a fix width font
                 double top = Math.Floor(position / width);
-                _textBoxIO.CursorTop = (int)top;
+                _displayIO.CursorTop = (int)top;
                 double left = position - width * Math.Floor(position / width);
-                _textBoxIO.CursorLeft = (int)left;
+                _displayIO.CursorLeft = (int)left;
             }
         }
 
@@ -206,8 +207,12 @@ namespace uBasicForm
             {
                 do
                 {
-                    _basic.Run();
-                } while (!_basic.IsFinished());
+                    if (!_stopped && !_paused)
+                    {
+                        _basic.Run();
+                    }
+                } while (!_basic.IsFinished() && !_stopped);
+                _stopped = true;
             }
             catch (Exception e)
             {
@@ -226,7 +231,7 @@ namespace uBasicForm
             if (chr == '\r')
             {
                 value += chr;
-                _textBoxIO.Input = value;
+                _displayIO.Input = value;
                 this.consoleTextBox.AppendText("\r" + "\n");
                 value = "";
             }
@@ -307,13 +312,13 @@ namespace uBasicForm
                     _mruMenu.AddFile(filenamePath);
                     UInt32 size = 4096;
                     memory = new byte[size];
-                    _basic = new uBasic(memory, size, _textBoxIO);
+                    _basic = new uBasic(memory, size, _displayIO);
                     _basic.Init();
                     _basic.Load(program);
 
                     _stopped = false;
                     this._workerThread = new Thread(new ThreadStart(this.Run));
-                    _textBoxIO.Reset();
+                    _displayIO.Reset();
                     this._workerThread.Start();
                     consoleTextBox.Visible = true;
                     consoleTextBox.Enabled = true;
@@ -370,7 +375,7 @@ namespace uBasicForm
 
             // Fixed windows size
 
-            this.Width = _textBoxIO.Width;
+            this.Width = _displayIO.Width;
 
             // Set window size
 
@@ -400,7 +405,7 @@ namespace uBasicForm
 
             if (_stopped == false)
             {
-                _textBoxIO.Input = "\r\n";
+                _displayIO.Input = "\r\n";
                 _basic.Stop();
                 if (_workerThread != null && _workerThread.IsAlive)
                 {
@@ -503,6 +508,166 @@ namespace uBasicForm
                 }
             }
             Debug.WriteLine("Out SaveFiles");
+        }
+
+        private void saveToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Debug.WriteLine("In saveToolStripMenuItem_Click()");
+
+            try
+            {
+                // Find next available snapshot number
+                string snapshotDir = Path.Combine(Application.StartupPath, "snapshots");
+                if (!Directory.Exists(snapshotDir))
+                {
+                    Directory.CreateDirectory(snapshotDir);
+                }
+
+                int snapshotNum = 1;
+                string snapshotPath;
+                do
+                {
+                    snapshotPath = Path.Combine(snapshotDir, $"snapshot_{snapshotNum:D3}.bin");
+                    snapshotNum++;
+                } while (File.Exists(snapshotPath));
+
+                // SaveMemory handles pause/resume internally
+                SaveMemory(snapshotPath);
+                TraceInternal.TraceInformation($"Memory snapshot saved to {snapshotPath}");
+
+                // Brief status update (non-blocking)
+                string[] parts = this.Text.Split(new string[] { " - " }, 2, StringSplitOptions.None);
+                this.Text = parts[0] + " - " + Path.GetFileName(snapshotPath);
+            }
+            catch (Exception ex)
+            {
+                TraceInternal.TraceError($"Save memory error: {ex.Message}");
+                MessageBox.Show($"Error saving memory: {ex.Message}", 
+                              "Save Error", 
+                              MessageBoxButtons.OK, 
+                              MessageBoxIcon.Error);
+            }
+
+            Debug.WriteLine("Out saveToolStripMenuItem_Click()");
+        }
+
+        private void loadToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Debug.WriteLine("In loadToolStripMenuItem_Click()");
+
+            try
+            {
+                // Load from most recent snapshot
+                string snapshotDir = Path.Combine(Application.StartupPath, "snapshots");
+                if (!Directory.Exists(snapshotDir))
+                {
+                    MessageBox.Show("No snapshots found. Create a snapshot first using File > Save.",
+                                  "No Snapshots",
+                                  MessageBoxButtons.OK,
+                                  MessageBoxIcon.Information);
+                    return;
+                }
+
+                // Find most recent snapshot
+                string[] snapshots = Directory.GetFiles(snapshotDir, "snapshot_*.bin");
+                if (snapshots.Length == 0)
+                {
+                    MessageBox.Show("No snapshots found. Create a snapshot first using File > Save.",
+                                  "No Snapshots",
+                                  MessageBoxButtons.OK,
+                                  MessageBoxIcon.Information);
+                    return;
+                }
+
+                Array.Sort(snapshots);
+                string latestSnapshot = snapshots[snapshots.Length - 1];
+
+                LoadMemory(latestSnapshot);
+
+                // Clear display after loading new state
+                consoleTextBox.Clear();
+
+                TraceInternal.TraceInformation($"Memory loaded from {latestSnapshot}");
+
+                // Update title to show loaded snapshot
+                string[] parts = this.Text.Split(new string[] { " - " }, 2, StringSplitOptions.None);
+                this.Text = parts[0] + " - Loaded: " + Path.GetFileName(latestSnapshot);
+            }
+            catch (Exception ex)
+            {
+                TraceInternal.TraceError($"Load memory error: {ex.Message}");
+                MessageBox.Show($"Error loading memory: {ex.Message}",
+                              "Load Error",
+                              MessageBoxButtons.OK,
+                              MessageBoxIcon.Error);
+            }
+
+            Debug.WriteLine("Out loadToolStripMenuItem_Click()");
+        }
+
+        /// <summary>
+        /// Load a previously saved memory state from a binary file.
+        /// This restores both the memory contents and reinitializes the interpreter's internal state.
+        /// </summary>
+        /// <param name="filePath">Path to the memory dump file</param>
+        public void LoadMemory(string filePath)
+        {
+            Debug.WriteLine($"In uBasicUI.LoadMemory({filePath})");
+            _paused = true;
+            try
+            {
+                // Give current Run() call time to finish
+                Thread.Sleep(500);
+
+                byte[] loadedMemory = File.ReadAllBytes(filePath);
+                if (loadedMemory.Length != _basic.Size)
+                {
+                    throw new InvalidOperationException(
+                        $"Memory size mismatch: file={loadedMemory.Length}, expected={_basic.Size}");
+                }
+
+                _basic.Memory = loadedMemory;
+
+                TraceInternal.TraceInformation($"Loaded {_basic.Size} bytes from {filePath} and reinitialized interpreter");
+            }
+            catch (Exception ex)
+            {
+                TraceInternal.TraceError($"LoadMemory error: {ex.Message}");
+                throw;
+            }
+            finally
+            {
+                _paused = false;
+            }
+            Debug.WriteLine("Out uBasicUI.LoadMemory()");
+        }
+
+        /// <summary>
+        /// Save the entire interpreter memory state to a binary file
+        /// </summary>
+        /// <param name="filePath">Path to save the memory dump</param>
+        public void SaveMemory(string filePath)
+        {
+            Debug.WriteLine($"In uBasic.SaveMemory({filePath})");
+            _paused = true;
+            try
+            {
+                // Give current Run() call time to finish
+                Thread.Sleep(500);
+
+                File.WriteAllBytes(filePath, _basic.Memory);
+                TraceInternal.TraceInformation($"Saved {_basic.Size} bytes to {filePath}");
+            }
+            catch (Exception ex)
+            {
+                TraceInternal.TraceError($"SaveMemory error: {ex.Message}");
+                throw;
+            }
+            finally
+            {
+                _paused = false;
+            }
+            Debug.WriteLine("Out uBasic.SaveMemory()");
         }
 
         #endregion

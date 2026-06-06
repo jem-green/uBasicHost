@@ -8,6 +8,8 @@ namespace uBasicLibrary
 {
     public interface IInterpreter
     {
+        UInt32 Size { get; }
+        byte[] Memory { get; set; }
         void Abort(string text);
         void Init();
         void Load(byte[] data);
@@ -15,5 +17,6 @@ namespace uBasicLibrary
         void Reset();
         bool IsFinished();
         void Stop();
+        void Resume();
     }
 }

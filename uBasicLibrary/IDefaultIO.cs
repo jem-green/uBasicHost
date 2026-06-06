@@ -22,11 +22,11 @@ namespace uBasicLibrary
 
         #endregion
         #region Methods
-        void Out(string theMsg);
+        void Out(string message);
         void Put(char character);
         string In();
         char Get();
-        void Error(string theErr);
+        void Error(string errorMessage);
         void Reset();
 
         #endregion

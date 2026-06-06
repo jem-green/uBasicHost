@@ -21,6 +21,8 @@ namespace uBasicApp
         IInterpreter _basic = null;
         int _pos = 0;
         bool _stopped = true;
+        bool _paused = false;
+
 
         // display updating fix
 
@@ -161,7 +163,7 @@ namespace uBasicApp
             consolePictureBox.Visible = false;
             if (_stopped == false)
             {
-                _basic.Stop();
+                _basic.Stop();  // This will cause the worker thread to exit the Run() loop and finish
                 if (_workerThread != null && _workerThread.IsAlive)
                 {
                     _workerThread.Join(1000);
@@ -207,6 +209,7 @@ namespace uBasicApp
                     _basic.Load(program);
 
                     _stopped = false;
+                    _paused = false;
                     this._workerThread = new Thread(new ThreadStart(this.Run));
                     _displayIO.Reset();
                     this._workerThread.Start();
@@ -274,8 +277,11 @@ namespace uBasicApp
             {
                 do
                 {
-                    _basic.Run();
-                } while (!_basic.IsFinished());
+                    if (!_stopped && !_paused)
+                    {
+                        _basic.Run();
+                    }
+                } while (!_basic.IsFinished() && !_stopped);
                 _stopped = true;
             }
             catch (Exception e)
@@ -326,7 +332,7 @@ namespace uBasicApp
                 TraceInternal.TraceInformation("Use Name=" + filename);
                 TraceInternal.TraceInformation("Use Path=" + path);
 
-                _mtd.Clear(); // Calls generate internally
+                //_mtd.Clear(); // Calls generate internally
                 Version version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
                 this.Text = "uBasic " + version + " - " + filename;
 
@@ -348,9 +354,12 @@ namespace uBasicApp
                     UInt32 size = 4096;
                     memory = new byte[size];
                     IInterpreter basic = new uBasic(memory, size, _displayIO);
-                    _basic = new uBasic(program, size, _displayIO);
+                    _basic = new uBasic(memory, size, _displayIO);
+                    _basic.Init();
+                    _basic.Load(program);
 
                     _stopped = false;
+                    _paused = false;
                     this._workerThread = new Thread(new ThreadStart(this.Run));
                     _displayIO.Reset();
                     this._workerThread.Start();
@@ -404,7 +413,7 @@ namespace uBasicApp
             {
                 this.Location = new Point(0, 0);
             }
-            
+
 
             this.WindowState = FormWindowState.Normal;
 
@@ -665,8 +674,6 @@ namespace uBasicApp
             this.consolePictureBox.Invalidate();
         }
 
-        #endregion
-
         private void ConsolePiciureBox_Click(object sender, EventArgs e)
         {
             this.consolePictureBox.Invalidate();
@@ -677,6 +684,7 @@ namespace uBasicApp
             if (_stopped == false)
             {
                 _basic.Stop();
+                _stopped = true;
             }
         }
 
@@ -685,12 +693,259 @@ namespace uBasicApp
             if (_stopped == true)
             {
                 _basic.Reset();
+                _stopped = false;
                 Run();
                 if (_workerThread != null && _workerThread.IsAlive)
                 {
                     _workerThread.Join(1000);
                 }
             }
+        }
+
+        private void saveToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Debug.WriteLine("In saveToolStripMenuItem_Click()");
+
+            try
+            {
+                // Check if interpreter is initialized
+                if (_basic != null)
+                {
+
+                    // This is a simple memory dump of the entire interpreter state.
+                    // It can be loaded back to restore the state of the interpreter.
+                    // This is not a checkpoint its a hibernate.
+
+                    string fileName = "memory_dump.bin";
+                    _paused = true;
+                    try
+                    {
+                        // Give current Run() call time to finish
+                        Thread.Sleep(500);
+
+                        File.WriteAllBytes(fileName, _basic.Memory);
+                        TraceInternal.TraceInformation($"Saved {_basic.Size} bytes to {fileName}");
+                    }
+                    catch (Exception ex)
+                    {
+                        TraceInternal.TraceError($"SaveMemory error: {ex.Message}");
+                        throw;
+                    }
+                    finally
+                    {
+                        _basic.Stop();
+                    }
+                }
+
+                //SaveFileDialog saveFileDialog = new SaveFileDialog
+                //{
+                //    Filter = "Memory Dump (*.bin)|*.bin|All Files (*.*)|*.*",
+                //    FilterIndex = 1,
+                //    FileName = "memory_dump.bin",
+                //    RestoreDirectory = true
+                //};
+
+                //if (saveFileDialog.ShowDialog() == DialogResult.OK)
+                //{
+                //    // SaveMemory handles pause/resume internally
+                //    SaveMemory(saveFileDialog.FileName);
+                //    TraceInternal.TraceInformation($"Memory saved to {saveFileDialog.FileName}");
+                //    MessageBox.Show($"Memory saved to {saveFileDialog.FileName}",
+                //                  "Save Complete",
+                //                  MessageBoxButtons.OK,
+                //                  MessageBoxIcon.Information);
+                //}
+            }
+            catch (Exception ex)
+            {
+                TraceInternal.TraceError($"Save memory error: {ex.Message}");
+                MessageBox.Show($"Error saving memory: {ex.Message}",
+                              "Save Error",
+                              MessageBoxButtons.OK,
+                              MessageBoxIcon.Error);
+            }
+
+            Debug.WriteLine("Out saveToolStripMenuItem_Click()");
+        }
+
+        private void loadToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            Debug.WriteLine("In loadToolStripMenuItem_Click()");
+
+            if (_stopped == false)
+            {
+                _basic.Stop();  // This will cause the worker thread to exit the Run() loop and finish
+                if (_workerThread != null && _workerThread.IsAlive)
+                {
+                    _workerThread.Join(1000);
+                }
+            }
+
+            try
+            {
+                string fileName = "memory_dump.bin";
+                byte[] loadedMemory = File.ReadAllBytes(fileName);
+
+                UInt32 size = 4096;
+                _basic = new uBasic(loadedMemory, size, _displayIO);
+                _basic.Init();
+                _basic.Resume();
+
+                _stopped = false;
+                _paused = false;
+                this._workerThread = new Thread(new ThreadStart(this.Run));
+                _displayIO.Reset();
+                this._workerThread.Start();
+                consolePictureBox.Visible = true;
+                consolePictureBox.Enabled = true;
+            }
+            catch (Exception e1)
+            {
+                TraceInternal.TraceError(e1.ToString());
+            }
+
+
+
+
+                //OpenFileDialog openFileDialog = new OpenFileDialog
+                //{
+                //    Filter = "Memory Dump (*.bin)|*.bin|All Files (*.*)|*.*",
+                //    FilterIndex = 1,
+                //    RestoreDirectory = true
+                //};
+
+                //if (openFileDialog.ShowDialog() == DialogResult.OK)
+                //{
+                //    // If no interpreter exists, create one to receive the memory dump
+                //    if (_basic == null)
+                //    {
+                //        UInt32 size = 4096;
+                //        byte[] memory = new byte[size];
+                //        _basic = new uBasic(memory, size, _displayIO);
+                //        _basic.Init();
+                //    }
+                //    LoadMemory(openFileDialog.FileName);
+
+                //    // Clear display after loading new state
+                //    _mtd.Clear();
+                //    _mtd.Set(0, 0);
+                //    consolePictureBox.Invalidate();
+
+                //    TraceInternal.TraceInformation($"Memory loaded from {openFileDialog.FileName}");
+
+                // Start worker thread if not already running
+                //if (_stopped || _workerThread == null || !_workerThread.IsAlive)
+                //{
+                //    _stopped = false;
+                //    _workerThread = new Thread(new ThreadStart(this.Run));
+                //    _displayIO.Reset();
+                //    _workerThread.Start();
+                //    consolePictureBox.Visible = true;
+                //    consolePictureBox.Enabled = true;
+                //}
+
+                //MessageBox.Show($"Memory loaded from {openFileDialog.FileName}\nExecution started automatically.",
+                //              "Load Complete",
+                //              MessageBoxButtons.OK,
+                //              MessageBoxIcon.Information);
+            //}
+            //}
+            //catch (Exception ex)
+            //{
+            //    TraceInternal.TraceError($"Load memory error: {ex.Message}");
+            //    MessageBox.Show($"Error loading memory: {ex.Message}",
+            //                  "Load Error",
+            //                  MessageBoxButtons.OK,
+            //                  MessageBoxIcon.Error);
+            //}
+
+            Debug.WriteLine("Out loadToolStripMenuItem_Click()");
+        }
+
+        private void pauseToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            _paused = true;
+        }
+
+        /// <summary>
+        /// Load a previously saved memory state from a binary file.
+        /// This restores both the memory contents and reinitializes the interpreter's internal state.
+        /// </summary>
+        /// <param name="filePath">Path to the memory dump file</param>
+        public void LoadMemory(string filePath)
+        {
+            Debug.WriteLine($"In uBasicUI.LoadMemory({filePath})");
+            _paused = true;
+            _stopped = true;  // Ensure the worker thread will stop running the old state
+            try
+            {
+                Thread.Sleep(500);
+
+                byte[] loadedMemory = File.ReadAllBytes(filePath);
+                if (loadedMemory.Length != _basic.Size)
+                {
+                    throw new InvalidOperationException(
+                        $"Memory size mismatch: file={loadedMemory.Length}, expected={_basic.Size}");
+                }
+
+                UInt32 size = 4096;
+                _basic = new uBasic(loadedMemory, size, _displayIO);
+                _basic.Init();
+
+                // Copy into the existing buffer that the C DLL is pointing to
+                // DON'T do: _basic.Memory = loadedMemory;  // This won't work!
+                //Array.Copy(loadedMemory, 0, _basic.Memory, 0, (int)_basic.Size);
+
+                // Now resume from the restored state
+                _basic.Resume();
+
+                TraceInternal.TraceInformation($"Loaded {_basic.Size} bytes from {filePath} and resumed");
+            }
+            catch (Exception ex)
+            {
+                TraceInternal.TraceError($"LoadMemory error: {ex.Message}");
+                throw;
+            }
+            finally
+            {
+                //_paused = false;
+            }
+            Debug.WriteLine("Out uBasicUI.LoadMemory()");
+        }
+
+        /// <summary>
+        /// Save the entire interpreter memory state to a binary file
+        /// </summary>
+        /// <param name="filePath">Path to save the memory dump</param>
+        private void SaveMemory(string filePath)
+        {
+            Debug.WriteLine($"In uBasic.SaveMemory({filePath})");
+            _paused = true;
+            try
+            {
+                // Give current Run() call time to finish
+                Thread.Sleep(500);
+
+                File.WriteAllBytes(filePath, _basic.Memory);
+                TraceInternal.TraceInformation($"Saved {_basic.Size} bytes to {filePath}");
+            }
+            catch (Exception ex)
+            {
+                TraceInternal.TraceError($"SaveMemory error: {ex.Message}");
+                throw;
+            }
+            finally
+            {
+                _paused = false;
+            }
+            Debug.WriteLine("Out uBasic.SaveMemory()");
+        }
+
+        #endregion
+
+        private void resumeToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            _paused = false;
         }
     }
 }
