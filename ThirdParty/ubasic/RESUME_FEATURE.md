@@ -37,16 +37,7 @@ Resumes execution from the position stored at memory offset 0.
 ubasic_resume();  // Resume from saved position
 ```
 
-### `int32_t ubasic_get_resume_offset(void)`
-Returns the saved resume offset value (for debugging/informational purposes).
 
-**Returns:** The byte offset from program start, or 0 if not set.
-
-**Usage:**
-```c
-int32_t offset = ubasic_get_resume_offset();
-printf("Resume offset: %d\n", offset);
-```
 
 ## Usage Pattern
 
@@ -55,7 +46,7 @@ printf("Resume offset: %d\n", offset);
 uint8_t memory[4096];
 
 // 1. Initialize and load program
-ubasic_init_sized(memory, sizeof(memory));
+ubasic_init(memory, sizeof(memory));
 ubasic_load_program(program_text);
 
 // 2. Run for a while - position is saved automatically before each line
@@ -72,7 +63,7 @@ save_to_file("save.dat", memory, sizeof(memory));
 load_from_file("save.dat", memory, sizeof(memory));
 
 // 5. Re-initialize (resets internal pointers)
-ubasic_init_sized(memory, sizeof(memory));
+ubasic_init(memory, sizeof(memory));
 
 // 6. Resume execution from saved position
 ubasic_resume();
@@ -83,23 +74,9 @@ while (!ubasic_finished()) {
 }
 ```
 
-### Checking if Resume Data Exists
-```c
-int32_t offset = ubasic_get_resume_offset();
-if (offset > 0) {
-    printf("Resume data found, resuming from offset %d\n", offset);
-    ubasic_resume();
-} else {
-    printf("No resume data, starting from beginning\n");
-}
-```
-
 ## Important Notes
 
-1. **Complete Memory Save**: When saving, you must save the entire memory block, not just the resume offset. The memory contains:
-   - Resume offset
-   - Control flow state (GOSUB and FOR stacks)
-   - Automatic Position Saving**: The execution position is automatically saved before each line executes. You don't need to call any save function.
+1. **Automatic Position Saving**: The execution position is automatically saved before each line executes. You don't need to call any save function.
 
 2. **Complete Memory Save**: When saving, you must save the entire memory block, not just the resume offset. The memory contains:
    - Resume offset (automatically updated)
@@ -107,7 +84,7 @@ if (offset > 0) {
    - Program text
    - Variable values
 
-3. **Re-initialization Required**: After loading memory, you must call `ubasic_init_sized()` again to re-establish internal pointers before calling `ubasic_resume()`.
+3. **Re-initialization Required**: After loading memory, you must call `ubasic_init()` again with the **exact same memory size** to re-establish internal pointers before calling `ubasic_resume()`. Using a different size will cause variables to be at the wrong location!
 
 4. **Preservation of State**: The resume feature preserves:
    - Current execution position (saved before each line)
@@ -119,11 +96,11 @@ if (offset > 0) {
 5. **Line-Level Granularity**: Position is saved at line boundaries. When you resume, the program will re-execute the line it was on when the memory was saved (or continue to the next line if the previous line completed)
 See [resume_example.c](resume_example.c) for a complete working example.
 
-## Technical Detailsautomatically saved at the start of `line_statement()` before each line executes
+## Technical Details
+
+- Position is automatically saved at the start of `line_statement()` before each line executes
 - The offset is stored as a byte offset from `tokenizer_start()` to `tokenizer_pos()`
 - When resuming, `tokenizer_goto()` is called to restore the tokenizer position
 - The `ended` flag is cleared on resume to allow continued execution
 - All BASIC control flow state (GOSUB/FOR stacks) is preserved in memory
-- No manual intervention needed - just run your program and save memory whenever you wantosition
-- The `ended` flag is cleared on resume to allow continued execution
-- All BASIC control flow state (GOSUB/FOR stacks) is preserved in memory
+- No manual intervention needed - just run your program and save memory whenever you want

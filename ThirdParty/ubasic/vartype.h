@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2006, Adam Dunkels
+ * Copyright (c) 2013, Danyil Bohdan
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,67 +28,20 @@
  * SUCH DAMAGE.
  *
  */
-#ifndef __TOKENIZER_H__
-#define __TOKENIZER_H__
+#ifndef __VARTYPE_H__
+#define __VARTYPE_H__
 
-#include "vartype.h"
+#include <stdint.h>
 
-enum {
-  TOKENIZER_ERROR,			// 0
-  TOKENIZER_ENDOFINPUT,		// 1
-  TOKENIZER_NUMBER,			// 2
-  TOKENIZER_STRING,			// 3
-  TOKENIZER_VARIABLE,		// 4
-  TOKENIZER_LET,			// 5
-  TOKENIZER_PRINT,			// 6
-  TOKENIZER_IF,				// 7
-  TOKENIZER_THEN,			// 8
-  TOKENIZER_ELSE,			// 9
-  TOKENIZER_FOR,			// 10
-  TOKENIZER_TO,
-  TOKENIZER_NEXT,
-  TOKENIZER_GOTO,
-  TOKENIZER_GOSUB,
-  TOKENIZER_RETURN,
-  TOKENIZER_CALL,
-  TOKENIZER_REM,
-  TOKENIZER_PEEK,
-  TOKENIZER_POKE,
-  TOKENIZER_END,
-  TOKENIZER_COMMA,
-  TOKENIZER_SEMICOLON,
-  TOKENIZER_PLUS,
-  TOKENIZER_MINUS,
-  TOKENIZER_AND,
-  TOKENIZER_OR,
-  TOKENIZER_ASTR,
-  TOKENIZER_SLASH,
-  TOKENIZER_MOD,
-  TOKENIZER_HASH,
-  TOKENIZER_LEFTPAREN,
-  TOKENIZER_RIGHTPAREN,
-  TOKENIZER_LT,
-  TOKENIZER_GT,
-  TOKENIZER_EQ,
-  TOKENIZER_LF,
-  TOKENIZER_CR
-};
+/*
+ * Default numeric type remains int32_t for deterministic integer mode.
+ * Override UBASIC_NUMERIC_TYPE (for example to double) at compile time
+ * when enabling alternate numeric behavior later.
+ */
+#ifndef UBASIC_NUMERIC_TYPE
+#define UBASIC_NUMERIC_TYPE int32_t
+#endif
 
-// Public
+#define VARIABLE_TYPE UBASIC_NUMERIC_TYPE
 
-void tokenizer_goto(const char *program);
-void tokenizer_init(const char *program);
-void tokenizer_reset(void);
-void tokenizer_next(void);
-int tokenizer_token(void);
-VARIABLE_TYPE tokenizer_num(void);
-int tokenizer_variable_num(void);
-void tokenizer_string(char *dest, int len);
-int tokenizer_finished(void);
-void tokenizer_error_print(void);
-char const *tokenizer_pos(void);
-char const *tokenizer_start(void);
-char *tokenizer_token_name(int token);
-void tokenizer_skip(void);
-
-#endif /* __TOKENIZER_H__ */
+#endif /* __VARTYPE_H__ */

@@ -41,10 +41,11 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 static char const *ptr, *nextptr, *startptr;
 
-#define MAX_NUMLEN 6
+#define MAX_NUMLEN 11  // Max 10 digits for uint32_t (4294967295) plus 1
 
 struct keyword_token {
   char *keyword;
@@ -54,22 +55,23 @@ struct keyword_token {
 static int current_token = TOKENIZER_ERROR;
 
 static const struct keyword_token keywords[] = {
-  {"let", TOKENIZER_LET},
-  {"print", TOKENIZER_PRINT},
-  {"if", TOKENIZER_IF},
-  {"then", TOKENIZER_THEN},
-  {"else", TOKENIZER_ELSE},
-  {"for", TOKENIZER_FOR},
-  {"to", TOKENIZER_TO},
-  {"next", TOKENIZER_NEXT},
-  {"goto", TOKENIZER_GOTO},
-  {"gosub", TOKENIZER_GOSUB},
-  {"return", TOKENIZER_RETURN},
-  {"call", TOKENIZER_CALL},
-  {"rem", TOKENIZER_REM},
-  {"peek", TOKENIZER_PEEK},
-  {"poke", TOKENIZER_POKE},
-  {"end", TOKENIZER_END},
+  {"LET", TOKENIZER_LET},
+  {"PRINT", TOKENIZER_PRINT},
+  {"IF", TOKENIZER_IF},
+  {"THEN", TOKENIZER_THEN},
+
+  {"FOR", TOKENIZER_FOR},
+  {"TO", TOKENIZER_TO},
+  {"NEXT", TOKENIZER_NEXT},
+  {"GOTO", TOKENIZER_GOTO},
+  {"GOSUB", TOKENIZER_GOSUB},
+  {"RETURN", TOKENIZER_RETURN},
+  {"REM", TOKENIZER_REM},
+  {"PEEK", TOKENIZER_PEEK},
+  {"POKE", TOKENIZER_POKE},
+  {"END", TOKENIZER_END},
+  {"PUSH", TOKENIZER_PUSH},
+  {"POP", TOKENIZER_POP},
   {NULL, TOKENIZER_ERROR}
 };
 
@@ -83,27 +85,24 @@ static const struct keyword_token tokens[] = {
 	{"TOKENIZER_PRINT",TOKENIZER_PRINT},
 	{"TOKENIZER_IF",TOKENIZER_IF},
 	{"TOKENIZER_THEN",TOKENIZER_THEN},
-	{"TOKENIZER_ELSE",TOKENIZER_ELSE},
 	{"TOKENIZER_FOR",TOKENIZER_FOR},
 	{"TOKENIZER_TO",TOKENIZER_TO},
 	{"TOKENIZER_NEXT",TOKENIZER_NEXT},
 	{"TOKENIZER_GOTO",TOKENIZER_GOTO},
 	{"TOKENIZER_GOSUB",TOKENIZER_GOSUB},
 	{"TOKENIZER_RETURN",TOKENIZER_RETURN},
-	{"TOKENIZER_CALL",TOKENIZER_CALL},
 	{"TOKENIZER_REM",TOKENIZER_REM},
 	{"TOKENIZER_PEEK",TOKENIZER_PEEK},
 	{"TOKENIZER_POKE",TOKENIZER_POKE},
 	{"TOKENIZER_END",TOKENIZER_END},
+	{"TOKENIZER_PUSH",TOKENIZER_PUSH},
+	{"TOKENIZER_POP",TOKENIZER_POP},
 	{"TOKENIZER_COMMA",TOKENIZER_COMMA},
 	{"TOKENIZER_SEMICOLON",TOKENIZER_SEMICOLON},
 	{"TOKENIZER_PLUS",TOKENIZER_PLUS},
 	{"TOKENIZER_MINUS",TOKENIZER_MINUS},
-	{"TOKENIZER_AND",TOKENIZER_AND},
-	{"TOKENIZER_OR",TOKENIZER_OR},
 	{"TOKENIZER_ASTR",TOKENIZER_ASTR},
 	{"TOKENIZER_SLASH",TOKENIZER_SLASH},
-	{"TOKENIZER_MOD",TOKENIZER_MOD},
 	{"TOKENIZER_HASH",TOKENIZER_HASH},
 	{"TOKENIZER_LEFTPAREN",TOKENIZER_LEFTPAREN},
 	{"TOKENIZER_RIGHTPAREN",TOKENIZER_RIGHTPAREN},
@@ -126,16 +125,10 @@ static int singlechar(void) {
     return TOKENIZER_PLUS;
   } else if(*ptr == '-') {
     return TOKENIZER_MINUS;
-  } else if(*ptr == '&') {
-    return TOKENIZER_AND;
-  } else if(*ptr == '|') {
-    return TOKENIZER_OR;
   } else if(*ptr == '*') {
     return TOKENIZER_ASTR;
   } else if(*ptr == '/') {
     return TOKENIZER_SLASH;
-  } else if(*ptr == '%') {
-    return TOKENIZER_MOD;
   } else if(*ptr == '(') {
     return TOKENIZER_LEFTPAREN;
   } else if(*ptr == '#') {
@@ -204,7 +197,7 @@ static int get_next_token(void) {
     }
   }
 
-  if((*ptr >= 'a' && *ptr <= 'z') || (*ptr >= 'A' && *ptr <= 'Z')) {
+  if(*ptr >= 'a' && *ptr <= 'z') {
     nextptr = ptr + 1;
     return TOKENIZER_VARIABLE;
   }
@@ -263,11 +256,15 @@ void tokenizer_skip(void) {
   ptr = nextptr;
   current_token = get_next_token();
 }
-
 /*---------------------------------------------------------------------------*/
 VARIABLE_TYPE tokenizer_num(void)
 {
   return atoi(ptr);
+}
+/*---------------------------------------------------------------------------*/
+uint32_t tokenizer_linenum(void)
+{
+  return (uint32_t)strtoul(ptr, NULL, 10);
 }
 /*---------------------------------------------------------------------------*/
 void tokenizer_string(char *dest, int len){
@@ -282,8 +279,8 @@ void tokenizer_string(char *dest, int len){
     return;
   }
   string_len = string_end - ptr - 1;
-  if(len < string_len) {
-    string_len = len;
+  if(len < string_len + 1) {
+    string_len = len - 1;
   }
   memcpy(dest, ptr + 1, string_len);
   dest[string_len] = 0;
@@ -302,9 +299,6 @@ int tokenizer_finished(void) {
 int tokenizer_variable_num(void) {
   if(*ptr >= 'a' && *ptr <= 'z') {
     return *ptr - 'a';
-  }
-  if(*ptr >= 'A' && *ptr <= 'Z') {
-    return 26 + (*ptr - 'A');
   }
   return -1;
 }

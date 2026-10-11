@@ -20,20 +20,20 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Net6.0", "Net6.0", "{9A9D41
 		ThirdParty\tracer\net6.0\TracerLibrary.pdb = ThirdParty\tracer\net6.0\TracerLibrary.pdb
 	EndProjectSection
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "uBasic-Library", "uBasic-Library", "{1D1EF916-B1D1-4954-B162-63A4D3F8A120}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "uBasic", "uBasic", "{1D1EF916-B1D1-4954-B162-63A4D3F8A120}"
 	ProjectSection(SolutionItems) = preProject
-		ThirdParty\ubasic-library\LICENSE = ThirdParty\ubasic-library\LICENSE
-		ThirdParty\ubasic-library\makefile.bat = ThirdParty\ubasic-library\makefile.bat
-		ThirdParty\ubasic-library\tokenizer.c = ThirdParty\ubasic-library\tokenizer.c
-		ThirdParty\ubasic-library\tokenizer.h = ThirdParty\ubasic-library\tokenizer.h
-		ThirdParty\ubasic-library\tokenizer.obj = ThirdParty\ubasic-library\tokenizer.obj
-		ThirdParty\ubasic-library\ubasic.c = ThirdParty\ubasic-library\ubasic.c
-		ThirdParty\ubasic-library\ubasic.dll = ThirdParty\ubasic-library\ubasic.dll
-		ThirdParty\ubasic-library\ubasic.exp = ThirdParty\ubasic-library\ubasic.exp
-		ThirdParty\ubasic-library\ubasic.h = ThirdParty\ubasic-library\ubasic.h
-		ThirdParty\ubasic-library\ubasic.lib = ThirdParty\ubasic-library\ubasic.lib
-		ThirdParty\ubasic-library\ubasic.obj = ThirdParty\ubasic-library\ubasic.obj
-		ThirdParty\ubasic-library\vartype.h = ThirdParty\ubasic-library\vartype.h
+		ThirdParty\ubasic\LICENSE = ThirdParty\ubasic\LICENSE
+		ThirdParty\ubasic\makefile.bat = ThirdParty\ubasic\makefile.bat
+		ThirdParty\ubasic\tokenizer.c = ThirdParty\ubasic\tokenizer.c
+		ThirdParty\ubasic\tokenizer.h = ThirdParty\ubasic\tokenizer.h
+		ThirdParty\ubasic\tokenizer.obj = ThirdParty\ubasic\tokenizer.obj
+		ThirdParty\ubasic\ubasic.c = ThirdParty\ubasic\ubasic.c
+		ThirdParty\ubasic\ubasic.dll = ThirdParty\ubasic\ubasic.dll
+		ThirdParty\ubasic\ubasic.exp = ThirdParty\ubasic\ubasic.exp
+		ThirdParty\ubasic\ubasic.h = ThirdParty\ubasic\ubasic.h
+		ThirdParty\ubasic\ubasic.lib = ThirdParty\ubasic\ubasic.lib
+		ThirdParty\ubasic\ubasic.obj = ThirdParty\ubasic\ubasic.obj
+		ThirdParty\ubasic\vartype.h = ThirdParty\ubasic\vartype.h
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "uBasicApp", "uBasicApp\uBasicApp.csproj", "{C8D2642D-FED5-9944-8836-965ACBA00244}"
@@ -45,6 +45,15 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "net6.0", "net6.0", "{0C90AD
 		ThirdParty\display\net6.0-windows\DisplayLibrary.deps.json = ThirdParty\display\net6.0-windows\DisplayLibrary.deps.json
 		ThirdParty\display\net6.0-windows\DisplayLibrary.dll = ThirdParty\display\net6.0-windows\DisplayLibrary.dll
 		ThirdParty\display\net6.0-windows\DisplayLibrary.pdb = ThirdParty\display\net6.0-windows\DisplayLibrary.pdb
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Colour", "Colour", "{47084A05-E3BE-4B73-804F-7C84A57BAFFD}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "net6.0", "net6.0", "{DC14F4A5-7415-4923-8C94-7CF3DC05E0E6}"
+	ProjectSection(SolutionItems) = preProject
+		ThirdParty\colour\net6.0\ColourLibrary.deps.json = ThirdParty\colour\net6.0\ColourLibrary.deps.json
+		ThirdParty\colour\net6.0\ColourLibrary.dll = ThirdParty\colour\net6.0\ColourLibrary.dll
+		ThirdParty\colour\net6.0\ColourLibrary.pdb = ThirdParty\colour\net6.0\ColourLibrary.pdb
 	EndProjectSection
 EndProject
 Global
@@ -79,6 +88,8 @@ Global
 		{1D1EF916-B1D1-4954-B162-63A4D3F8A120} = {0936A1D6-4D56-4382-A0F1-2E5EC9A24DB8}
 		{899D3D9F-FC51-4A14-9283-348253560A03} = {0936A1D6-4D56-4382-A0F1-2E5EC9A24DB8}
 		{0C90ADE7-0439-4733-B1E9-7274DEAA3D53} = {899D3D9F-FC51-4A14-9283-348253560A03}
+		{47084A05-E3BE-4B73-804F-7C84A57BAFFD} = {0936A1D6-4D56-4382-A0F1-2E5EC9A24DB8}
+		{DC14F4A5-7415-4923-8C94-7CF3DC05E0E6} = {47084A05-E3BE-4B73-804F-7C84A57BAFFD}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {E71BD401-8414-45E0-8996-6610A7313AFD}

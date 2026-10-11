@@ -38,22 +38,29 @@
 typedef VARIABLE_TYPE (*peek_func)(VARIABLE_TYPE);
 typedef void (*poke_func)(VARIABLE_TYPE, VARIABLE_TYPE);
 
+/* I/O function pointers matching C# wrapper API */
+typedef void (*out_func)(const char *message);
+typedef void (*put_func)(char character);
+typedef void (*in_func)(char *buffer, size_t max_len);
+typedef char (*get_func)(void);
+typedef void (*err_func)(const char *code, const char *description, uint32_t line);
+
 /*
  * Classic 8-bit BASIC memory layout:
- *   LOW ADDRESSES (start of buffer):
+ *   LOW MEMORY (start of buffer):
  *     int32_t resume_offset at offset 0 (tokenizer position for resume)
  *     int32_t gosub_depth at offset 4
  *     int32_t for_depth at offset 8
  *     int32_t gosub_stack[UBASIC_MAX_GOSUB_STACK_DEPTH]
  *     struct for_state for_stack[UBASIC_MAX_FOR_STACK_DEPTH]
- *     program bytes (NUL-terminated, grows upward)
- *   
- *   HIGH ADDRESSES (top of buffer, when using ubasic_init_sized):
+ *     program bytes (NUL-terminated)
+ *     VARIABLE_TYPE variables[UBASIC_VARIABLE_COUNT] (after program)
  *     uint8_t heap[UBASIC_HEAP_BYTES] (optional, for future string/double)
- *     VARIABLE_TYPE variables[UBASIC_VARIABLE_COUNT] (AT TOP)
+ *   HIGH MEMORY (free space)
  */
 #define UBASIC_MAX_GOSUB_STACK_DEPTH 10
 #define UBASIC_MAX_FOR_STACK_DEPTH 4
+#define UBASIC_MAX_PUSH_STACK_DEPTH 16
 #define UBASIC_VARIABLE_COUNT 26
 
 #ifndef UBASIC_HEAP_BYTES
@@ -61,8 +68,8 @@ typedef void (*poke_func)(VARIABLE_TYPE, VARIABLE_TYPE);
 #endif
 
 typedef struct for_state {
-  int32_t line_after_for;
-  int32_t for_variable_index;
+  uint32_t line_after_for;
+  int32_t for_variable_index; /* 0..25 (a-z) */
   int32_t to;
 } for_state;
 
@@ -73,25 +80,37 @@ typedef struct for_state {
 #define UBASIC_MEM_GOSUB_STACK_OFFSET 12
 #define UBASIC_MEM_FOR_STACK_OFFSET \
   (UBASIC_MEM_GOSUB_STACK_OFFSET + UBASIC_MAX_GOSUB_STACK_DEPTH * (int)sizeof(int32_t))
-#define UBASIC_MEM_PROGRAM_OFFSET \
+/* PUSH/POP stack: depth cell + int32_t slots */
+#define UBASIC_MEM_PUSH_DEPTH_OFFSET \
   (UBASIC_MEM_FOR_STACK_OFFSET + UBASIC_MAX_FOR_STACK_DEPTH * (int)sizeof(for_state))
+#define UBASIC_MEM_PUSH_STACK_OFFSET \
+  (UBASIC_MEM_PUSH_DEPTH_OFFSET + (int)sizeof(int32_t))
+/* Program starts immediately after control structures */
+#define UBASIC_MEM_PROGRAM_OFFSET \
+  (UBASIC_MEM_PUSH_STACK_OFFSET + UBASIC_MAX_PUSH_STACK_DEPTH * (int)sizeof(int32_t))
 
-/* Variables at top (calculated at runtime) */
+/* Variables placed in LOW memory after program (calculated at runtime) */
 #define UBASIC_VARIABLES_SIZE (UBASIC_VARIABLE_COUNT * (int)sizeof(VARIABLE_TYPE))
-#define UBASIC_MIN_MEMORY_BYTES (UBASIC_MEM_PROGRAM_OFFSET + 1u + UBASIC_HEAP_BYTES + UBASIC_VARIABLES_SIZE)
+#define UBASIC_PUSH_STACK_SIZE (UBASIC_MAX_PUSH_STACK_DEPTH * (int)sizeof(int32_t))
+#define UBASIC_MIN_MEMORY_BYTES (UBASIC_MEM_PROGRAM_OFFSET + 1u + UBASIC_VARIABLES_SIZE + UBASIC_HEAP_BYTES)
 
 // Public
 
-__declspec(dllexport) void ubasic_init(uint8_t *memory, uint32_t memory_bytes);  /* Vars at top */
-__declspec(dllexport) void ubasic_reset(void);  /* Clears variables */
-__declspec(dllexport) void ubasic_run(void);
-__declspec(dllexport) int ubasic_finished(void);
-__declspec(dllexport) void ubasic_load_program(const char *program);  /* Preserves vars */
-__declspec(dllexport) void ubasic_resume(void);  /* Resume from saved position in memory */
+void ubasic_init(uint8_t *memory, uint32_t memory_bytes);  /* Minimal init for snapshot restore */
+void ubasic_reset(void);  /* Clears variables */
+void ubasic_run(void);
+int ubasic_finished(void);
+void ubasic_load_program(const char *program); /* Preserves vars */
 
-// Callback
 
-typedef void (*Callback)(const char* value);
-__declspec(dllexport) void ubasic_callback(Callback cb);
+/* I/O function setters matching C# wrapper API */
+void ubasic_set_out_function(out_func func);
+void ubasic_set_put_function(put_func func);
+void ubasic_set_in_function(in_func func);
+void ubasic_set_get_function(get_func func);
+void ubasic_set_error_function(err_func func);
+const char *ubasic_last_error_code(void);
+const char *ubasic_last_error_description(void);
+uint32_t ubasic_last_error_line(void);
 
 #endif /* __UBASIC_H__ */

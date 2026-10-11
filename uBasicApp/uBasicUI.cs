@@ -9,6 +9,7 @@ using System.Windows.Forms;
 using TracerLibrary;
 using uBasicApp.Properties;
 using uBasicLibrary;
+using ColourLibrary;
 
 namespace uBasicApp
 {

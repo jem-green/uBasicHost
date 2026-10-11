@@ -30,6 +30,9 @@
     <ProjectReference Include="..\uBasicLibrary\uBasicLibrary.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <Reference Include="ColourLibrary">
+      <HintPath>..\ThirdParty\colour\net6.0\ColourLibrary.dll</HintPath>
+    </Reference>
     <Reference Include="DisplayLibrary">
       <HintPath>..\ThirdParty\display\net6.0-windows\DisplayLibrary.dll</HintPath>
     </Reference>

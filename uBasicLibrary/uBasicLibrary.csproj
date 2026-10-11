@@ -8,6 +8,9 @@
     <FileVersion>1.0.0.0</FileVersion>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="ColourLibrary">
+      <HintPath>..\ThirdParty\colour\net6.0\ColourLibrary.dll</HintPath>
+    </Reference>
     <Reference Include="TracerLibrary">
       <HintPath>..\ThirdParty\tracer\net6.0\TracerLibrary.dll</HintPath>
     </Reference>

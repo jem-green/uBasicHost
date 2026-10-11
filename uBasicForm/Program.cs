@@ -56,7 +56,7 @@ namespace uBasicForm
             }
             string logFilenamePath = logPath.Value.ToString() + Path.DirectorySeparatorChar + logName.Value.ToString() + ".log";
             FileStreamWithRolling dailyRolling = new FileStreamWithRolling(logFilenamePath, new TimeSpan(1, 0, 0, 0), FileMode.Append);
-            TextWriterTraceListenerWithTime listener = new TextWriterTraceListenerWithTime(dailyRolling);
+            TextWriterTraceListenerWithTimestamp listener = new TextWriterTraceListenerWithTimestamp(dailyRolling);
             Trace.AutoFlush = true;
             TraceFilter fileTraceFilter = new System.Diagnostics.EventTypeFilter(SourceLevels.Verbose);
             listener.Filter = fileTraceFilter;
@@ -306,7 +306,7 @@ namespace uBasicForm
                 Directory.CreateDirectory(logPath.Value);
             }
             dailyRolling = new FileStreamWithRolling(logFilenamePath, new TimeSpan(1, 0, 0, 0), FileMode.Append);
-            listener = new TextWriterTraceListenerWithTime(dailyRolling);
+            listener = new TextWriterTraceListenerWithTimestamp(dailyRolling);
             Trace.AutoFlush = true;
             SourceLevels sourceLevels = TraceInternal.TraceLookup(traceLevels.Value.ToString());
             fileTraceFilter = new System.Diagnostics.EventTypeFilter(sourceLevels);

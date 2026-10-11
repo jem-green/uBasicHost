@@ -39,7 +39,7 @@ int main() {
     }
     
     /* Initialize uBASIC */
-    ubasic_init_sized(memory, MEMORY_SIZE);
+    ubasic_init(memory, MEMORY_SIZE);
     ubasic_callback(print_callback);
     ubasic_load_program(test_program);
     
@@ -50,8 +50,8 @@ int main() {
         ubasic_run();
     }
     
-    /* Get the automatically saved position */
-    int32_t saved_offset = ubasic_get_resume_offset();
+    /* Get the automatically saved position (stored at memory offset 0) */
+    int32_t saved_offset = *(int32_t*)(memory + 0);
     printf("\n=== Automatically saved at offset: %d ===\n", saved_offset);
     
     /* Simulate saving memory to disk/storage */
@@ -69,12 +69,12 @@ int main() {
     /* Simulate reloading from disk */
     memcpy(memory, saved_memory, MEMORY_SIZE);
     
-    /* Re-initialize pointers (as if we just loaded memory) */
-    ubasic_init_sized(memory, MEMORY_SIZE);
+    /* Re-initialize pointers (as if we just loaded memory) - MUST use same size! */
+    ubasic_init(memory, MEMORY_SIZE);
     ubasic_callback(print_callback);
     
     /* Resume from saved position */
-    printf("=== Resuming from offset: %d ===\n", ubasic_get_resume_offset());
+    printf("=== Resuming from offset: %d ===\n", *(int32_t*)(memory + 0));
     ubasic_resume();
     
     /* Continue execution from saved point */

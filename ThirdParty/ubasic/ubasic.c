@@ -57,10 +57,13 @@ static void reset_control_state(void);
 static VARIABLE_TYPE expr(void);
 void set_variable(int varum, VARIABLE_TYPE value);
 VARIABLE_TYPE get_variable(int varnum);
-static void gosub_push(int32_t line_num);
-static int32_t gosub_pop(void);
+static void gosub_push(uint32_t line_num);
+static uint32_t gosub_pop(void);
 static void for_push(for_state state);
 static for_state for_pop(void);
+static void push_statement(void);
+static void pop_statement(void);
+static void runtime_error(const char *code, const char *description, uint32_t line);
 
 static char const *program_ptr;
 #define MAX_STRINGLEN 40
@@ -74,9 +77,11 @@ static int32_t *for_depth_cell = NULL;
 static int32_t *gosub_stack_mem = NULL;
 static for_state *for_stack = NULL;
 static VARIABLE_TYPE *variables_mem = NULL;
+static int32_t *push_depth_cell = NULL;
+static int32_t *push_stack_mem = NULL;
 
 struct line_index {
-  int line_number;
+  uint32_t line_number;
   char const *program_text_position;
   struct line_index *next;
 };
@@ -85,37 +90,42 @@ struct line_index *line_index_head = NULL;
 struct line_index *line_index_current = NULL;
 
 static int ended;
+static uint32_t current_line_number;
 
 peek_func peek_function = NULL;
 poke_func poke_function = NULL;
+/* I/O function pointer */
+static void default_out_function(const char *message) {
+  printf("%s", message);
+}
 
-// Callback
+out_func out_function = default_out_function;  /* Default to printf wrapper */
+put_func put_function = NULL;
+in_func in_function = NULL;
+get_func get_function = NULL;
 
-static Callback stored_callback = 0;
+static void default_error_function(const char *code, const char *description, uint32_t line) {
+  if(line > 0) {
+    fprintf(stderr, "%s %s on line %u\n", code, description, line);
+  } else {
+    fprintf(stderr, "%s %s\n", code, description);
+  }
+}
+
+static err_func error_function = default_error_function;
+static char last_error_code[3] = "";
+static const char *last_error_description = "";
+static uint32_t last_error_line = 0;
 
 /*
  * Buffer passed to ubasic_init (see UBASIC_*_OFFSET in ubasic.h):
  *   gosub depth, for depth, gosub stack[], for stack[],
  *   then NUL-terminated program.
  */
-
-
-
-
 /*---------------------------------------------------------------------------*/
 //Public functions
 /*---------------------------------------------------------------------------*/
-void emit(const char* value) {
-  //
-  DEBUG_PRINTF(value);
-  if (stored_callback) {
-      stored_callback(value);
-  }
-}
-/*---------------------------------------------------------------------------*/
-__declspec(dllexport) void ubasic_init(uint8_t *memory, uint32_t memory_bytes) {
-  size_t variables_offset;
-  
+void ubasic_init(uint8_t *memory, uint32_t memory_bytes) {
   mem_base = memory;
   mem_capacity_bytes = memory_bytes;
   resume_offset_cell = (int32_t *)(memory + UBASIC_MEM_RESUME_OFFSET);
@@ -123,16 +133,12 @@ __declspec(dllexport) void ubasic_init(uint8_t *memory, uint32_t memory_bytes) {
   for_depth_cell = (int32_t *)(memory + UBASIC_MEM_FOR_DEPTH_OFFSET);
   gosub_stack_mem = (int32_t *)(memory + UBASIC_MEM_GOSUB_STACK_OFFSET);
   for_stack = (for_state *)(memory + UBASIC_MEM_FOR_STACK_OFFSET);
+  push_depth_cell = (int32_t *)(memory + UBASIC_MEM_PUSH_DEPTH_OFFSET);
+  push_stack_mem = (int32_t *)(memory + UBASIC_MEM_PUSH_STACK_OFFSET);
   
-  /* Variables at TOP of memory */
-  variables_offset = memory_bytes - UBASIC_VARIABLES_SIZE - UBASIC_HEAP_BYTES;
-  variables_mem = (VARIABLE_TYPE *)(memory + variables_offset);
-  
-  program_ptr = (char const *)(memory + UBASIC_MEM_PROGRAM_OFFSET);
-  index_free();
-  tokenizer_init(program_ptr);
+  /* Don't initialize program_ptr or variables_mem - allows snapshot restore */
   #if VERBOSE
-    DEBUG_PRINTF("ubasic_init: Variables at offset %zu (top of memory).\n", variables_offset);
+    DEBUG_PRINTF("ubasic_init: Base pointers set, ready for program load or snapshot restore.\n");
   #endif
 }
 /*---------------------------------------------------------------------------*/
@@ -147,7 +153,9 @@ void ubasic_init_peek_poke(uint8_t *memory, uint32_t memory_bytes,peek_func peek
 /*---------------------------------------------------------------------------*/
 static void reset_control_state(void) {
   index_free();
-  tokenizer_reset();
+  if (program_ptr != NULL) {
+    tokenizer_reset();
+  }
   if (resume_offset_cell != NULL) {
     *resume_offset_cell = 0;
   }
@@ -163,10 +171,33 @@ static void reset_control_state(void) {
   if (for_stack != NULL) {
     memset(for_stack, 0, UBASIC_MAX_FOR_STACK_DEPTH * sizeof(for_state));
   }
+  if (push_depth_cell != NULL) {
+    *push_depth_cell = 0;
+  }
+  last_error_code[0] = '\0';
+  last_error_description = "";
+  last_error_line = 0;
+  current_line_number = 0;
   ended = 0;
 }
 /*---------------------------------------------------------------------------*/
-__declspec(dllexport) void ubasic_reset(void) {
+static void runtime_error(const char *code, const char *description, uint32_t line) {
+  if(code != NULL && code[0] != '\0') {
+    last_error_code[0] = code[0];
+    last_error_code[1] = code[1] != '\0' ? code[1] : '\0';
+    last_error_code[2] = '\0';
+  } else {
+    last_error_code[0] = '\0';
+  }
+  last_error_description = description != NULL ? description : "";
+  last_error_line = line;
+  if(error_function != NULL) {
+    error_function(last_error_code, last_error_description, line);
+  }
+  ended = 1;
+}
+/*---------------------------------------------------------------------------*/
+void ubasic_reset(void) {
   reset_control_state();
   /* Also clear variables on full reset */
   if (variables_mem != NULL) {
@@ -177,42 +208,55 @@ __declspec(dllexport) void ubasic_reset(void) {
   #endif
 }
 /*---------------------------------------------------------------------------*/
-__declspec(dllexport) void ubasic_load_program(const char *program) {
+void ubasic_load_program(const char *program) {
   size_t len;
-  size_t available_program_bytes;
+  size_t program_end;
+  size_t variables_offset;
 
   if (mem_base == NULL) {
     DEBUG_PRINTF("ubasic_load_program: call ubasic_init first.\n");
     return;
   }
   
-  /* Reset control state but PRESERVE VARIABLES */
+  /* Reset control state */
   reset_control_state();
   
   len = strlen(program);
+  program_end = UBASIC_MEM_PROGRAM_OFFSET + len + 1;
   
+  /* Variables placed immediately after program */
+  variables_offset = program_end;
+
+  
+  /* Check total memory needed */
   if (mem_capacity_bytes != 0) {
-    /* Check program fits between PROGRAM_OFFSET and variables */
-    size_t variables_offset = mem_capacity_bytes - UBASIC_VARIABLES_SIZE - UBASIC_HEAP_BYTES;
-    if (UBASIC_MEM_PROGRAM_OFFSET + len + 1 > variables_offset) {
-      DEBUG_PRINTF("ubasic_load_program: program too large.\n");
+    size_t total_needed = variables_offset + UBASIC_VARIABLES_SIZE + UBASIC_HEAP_BYTES;
+    if (total_needed > mem_capacity_bytes) {
+      DEBUG_PRINTF("ubasic_load_program: insufficient memory.\n");
       return;
     }
   }
   
+  /* Load program */
   memcpy(mem_base + UBASIC_MEM_PROGRAM_OFFSET, program, len + 1);
   program_ptr = (char const *)(mem_base + UBASIC_MEM_PROGRAM_OFFSET);
+  
+  /* Place and clear variables right after program */
+  variables_mem = (VARIABLE_TYPE *)(mem_base + variables_offset);
+  memset(variables_mem, 0, UBASIC_VARIABLE_COUNT * sizeof(VARIABLE_TYPE));
+  
+  index_free();
   tokenizer_init(program_ptr);
   #if VERBOSE
-    DEBUG_PRINTF("ubasic_load_program: Loaded %u bytes, variables preserved.\n", (unsigned)len);
+    DEBUG_PRINTF("ubasic_load_program: Loaded %u bytes, variables at offset %zu.\n", (unsigned)len, variables_offset);
   #endif
 }
 /*---------------------------------------------------------------------------*/
-__declspec(dllexport) int ubasic_finished(void){
+int ubasic_finished(void){
   return ended || tokenizer_finished();
 }
 /*---------------------------------------------------------------------------*/
-__declspec(dllexport) void ubasic_run(void){
+void ubasic_run(void){
   if(tokenizer_finished()) {
     #if VERBOSE
       DEBUG_PRINTF("ubasic_run: Program finished.\n");
@@ -220,10 +264,6 @@ __declspec(dllexport) void ubasic_run(void){
     return;
   }
   line_statement();
-}
-/*---------------------------------------------------------------------------*/
-__declspec(dllexport) void ubasic_callback(Callback cb) {
-    stored_callback = cb;
 }
 /*---------------------------------------------------------------------------*/
 static void save_position(void) {
@@ -239,7 +279,7 @@ static void save_position(void) {
   }
 }
 /*---------------------------------------------------------------------------*/
-__declspec(dllexport) void ubasic_resume(void) {
+void ubasic_resume(void) {
   int32_t offset;
   const char *start_pos;
   const char *resume_pos;
@@ -268,8 +308,8 @@ static void accept(int token){
     DEBUG_PRINTF("accept: Token not what was expected (expected '%s', got %s).\n",
 	tokenizer_token_name(token),
 	tokenizer_token_name(tokenizer_token()));
-    tokenizer_error_print();
-    exit(1);
+    runtime_error("TS", "Token syntax mismatch", current_line_number);
+    return;
   }
   DEBUG_PRINTF("accept: Expected '%s', got it.\n", tokenizer_token_name(token));
   tokenizer_next();
@@ -314,8 +354,7 @@ static int term(void){
   op = tokenizer_token();
   DEBUG_PRINTF("term: token '%s'.\n", tokenizer_token_name(op));
   while(op == TOKENIZER_ASTR ||
-       op == TOKENIZER_SLASH ||
-       op == TOKENIZER_MOD) {
+       op == TOKENIZER_SLASH) {
     tokenizer_next();
     f2 = factor();
     DEBUG_PRINTF("term: %d %d %d\n", f1, op, f2);
@@ -324,10 +363,11 @@ static int term(void){
       f1 = f1 * f2;
       break;
     case TOKENIZER_SLASH:
+      if(f2 == 0) {
+        runtime_error("/0", "Division by zero", current_line_number);
+        return 0;
+      }
       f1 = f1 / f2;
-      break;
-    case TOKENIZER_MOD:
-      f1 = f1 % f2;
       break;
     }
     op = tokenizer_token();
@@ -339,14 +379,27 @@ static int term(void){
 static VARIABLE_TYPE expr(void){
   int t1, t2;
   int op;
+  int unary_minus = 0;
+  
+  /* Handle unary + or - */
+  if (tokenizer_token() == TOKENIZER_PLUS) {
+    accept(TOKENIZER_PLUS);
+  } else if (tokenizer_token() == TOKENIZER_MINUS) {
+    accept(TOKENIZER_MINUS);
+    unary_minus = 1;
+  }
 
   t1 = term();
+  
+  /* Apply unary minus if present */
+  if (unary_minus) {
+    t1 = -t1;
+  }
+  
   op = tokenizer_token();
   DEBUG_PRINTF("expr: token %s.\n", tokenizer_token_name(op));
   while(op == TOKENIZER_PLUS ||
-       op == TOKENIZER_MINUS ||
-       op == TOKENIZER_AND ||
-       op == TOKENIZER_OR) {
+       op == TOKENIZER_MINUS) {
     tokenizer_next();
     t2 = term();
     DEBUG_PRINTF("expr: %d %d %d.\n", t1, op, t2);
@@ -356,12 +409,6 @@ static VARIABLE_TYPE expr(void){
       break;
     case TOKENIZER_MINUS:
       t1 = t1 - t2;
-      break;
-    case TOKENIZER_AND:
-      t1 = t1 & t2;
-      break;
-    case TOKENIZER_OR:
-      t1 = t1 | t2;
       break;
     }
     op = tokenizer_token();
@@ -404,7 +451,7 @@ static void index_free(void) {
   if(line_index_head != NULL) {
     line_index_current = line_index_head;
     do {
-      DEBUG_PRINTF("index_free: Freeing index for line %d.\n", line_index_current->line_number);
+      DEBUG_PRINTF("index_free: Freeing index for line %u.\n", line_index_current->line_number);
       line_index_head = line_index_current;
       line_index_current = line_index_current->next;
       free(line_index_head);
@@ -413,7 +460,7 @@ static void index_free(void) {
   }
 }
 /*---------------------------------------------------------------------------*/
-static char const* index_find(int linenum) {
+static char const* index_find(uint32_t linenum) {
   struct line_index *lidx;
   lidx = line_index_head;
 
@@ -427,7 +474,7 @@ static char const* index_find(int linenum) {
     #if DEBUG
     	#if VERBOSE
       		if(lidx != NULL) {
-        		DEBUG_PRINTF("index_find: Step %3d. Found index for line %d: %p.\n",
+        		DEBUG_PRINTF("index_find: Step %3d. Found index for line %u: %td.\n",
         		step,
         		lidx->line_number,
         		lidx->program_text_position - tokenizer_start());
@@ -439,7 +486,7 @@ static char const* index_find(int linenum) {
   if(lidx != NULL && lidx->line_number == linenum) {
     #if DEBUG
     	#if VERBOSE
-      		DEBUG_PRINTF("index_find: Returning index for line %d.\n", linenum);
+      		DEBUG_PRINTF("index_find: Returning index for line %u.\n", linenum);
     	#endif
     #endif
     return lidx->program_text_position;
@@ -448,7 +495,7 @@ static char const* index_find(int linenum) {
   return NULL;
 }
 /*---------------------------------------------------------------------------*/
-static void index_add(int linenum, char const* sourcepos) {
+static void index_add(uint32_t linenum, char const* sourcepos) {
   if(line_index_head != NULL && index_find(linenum)) {
     return;
   }
@@ -469,48 +516,50 @@ static void index_add(int linenum, char const* sourcepos) {
   }
   #if DEBUG
   	#if VERBOSE
-		DEBUG_PRINTF("index_add: Adding index for line %d: %p.\n", linenum,
+		DEBUG_PRINTF("index_add: Adding index for line %u: %td.\n", linenum,
 			sourcepos - tokenizer_start());
 		#endif
 	#endif
 }
 /*---------------------------------------------------------------------------*/
-static void jump_linenum_slow(int linenum) {
+static void jump_linenum_slow(uint32_t linenum) {
+  DEBUG_PRINTF("jump_linenum_slow: Looking for line %u.\n", linenum);
   tokenizer_init(program_ptr);
-  while(tokenizer_num() != linenum) {
+  while(tokenizer_linenum() != linenum) {
     do {
-      do {
-        tokenizer_next();
-      } while(tokenizer_token() != TOKENIZER_LF &&
-          tokenizer_token() != TOKENIZER_ENDOFINPUT);
-      if(tokenizer_token() == TOKENIZER_LF) {
-        tokenizer_next();
-      }
-    } while(tokenizer_token() != TOKENIZER_NUMBER);
+      tokenizer_skip();
+    } while(tokenizer_token() != TOKENIZER_NUMBER &&
+            tokenizer_token() != TOKENIZER_ENDOFINPUT);
 	#if DEBUG
       #if VERBOSE
-        DEBUG_PRINTF("jump_linenum_slow: Found line %d.\n", tokenizer_num());
+        DEBUG_PRINTF("jump_linenum_slow: Found line %u.\n", tokenizer_linenum());
 	  #endif
 	#endif
+    if(tokenizer_token() == TOKENIZER_ENDOFINPUT) {
+      DEBUG_PRINTF("jump_linenum_slow: Line %u not found!\n", linenum);
+      runtime_error("UL", "Undefined line target", current_line_number);
+      return;
+    }
   }
+  DEBUG_PRINTF("jump_linenum_slow: Successfully jumped to line %u.\n", linenum);
 }
 /*---------------------------------------------------------------------------*/
-static void jump_linenum(int linenum) {
+static void jump_linenum(uint32_t linenum) {
   char const* pos = index_find(linenum);
   if(pos != NULL) {
-    DEBUG_PRINTF("jump_linenum: Going to line %d.\n", linenum);
+    DEBUG_PRINTF("jump_linenum: Going to line %u.\n", linenum);
     tokenizer_goto(pos);
   } else {
     /* We'll try to find a yet-unindexed line to jump to. */
-    DEBUG_PRINTF("jump_linenum: Calling jump_linenum_slow for line %d.\n", linenum);
+    DEBUG_PRINTF("jump_linenum: Calling jump_linenum_slow for line %u.\n", linenum);
     jump_linenum_slow(linenum);
   }
 }
 /*---------------------------------------------------------------------------*/
 static void goto_statement(void) {
   accept(TOKENIZER_GOTO);
-  DEBUG_PRINTF("jump_linenum: goto.\n");
-  jump_linenum(tokenizer_num());
+  DEBUG_PRINTF("goto_statement: goto.\n");
+  jump_linenum(tokenizer_linenum());
 }
 /*---------------------------------------------------------------------------*/
 static void print_statement(void) {
@@ -538,10 +587,8 @@ static void print_statement(void) {
     }
   } while(tokenizer_token() != TOKENIZER_LF &&
       tokenizer_token() != TOKENIZER_ENDOFINPUT);
-  emit(buf);
-  //printf(buf);
-  //printf("\n");
-  emit("\n");
+  out_function(buf);
+  out_function("\n");
   DEBUG_PRINTF("print_statement: End of print.\n");
   tokenizer_next();
 }
@@ -561,13 +608,13 @@ static void if_statement(void){
   } else {
     do {
       tokenizer_next();
-    } while(tokenizer_token() != TOKENIZER_ELSE &&
-        tokenizer_token() != TOKENIZER_LF &&
+      if(tokenizer_token() == TOKENIZER_ERROR) {
+        runtime_error("TS", "Unsupported statement", current_line_number);
+        return;
+      }
+    } while(tokenizer_token() != TOKENIZER_LF &&
         tokenizer_token() != TOKENIZER_ENDOFINPUT);
-    if(tokenizer_token() == TOKENIZER_ELSE) {
-      tokenizer_next();
-      statement();
-    } else if(tokenizer_token() == TOKENIZER_LF) {
+    if(tokenizer_token() == TOKENIZER_LF) {
       tokenizer_next();
     }
   }
@@ -589,29 +636,32 @@ static void let_statement(void){
 }
 /*---------------------------------------------------------------------------*/
 static void gosub_statement(void){
-  int linenum;
+  uint32_t target_line;
+  uint32_t return_line;
   accept(TOKENIZER_GOSUB);
-  linenum = tokenizer_num();
+  target_line = tokenizer_linenum();
   accept(TOKENIZER_NUMBER);
   accept(TOKENIZER_LF);
+  
+  /* After LF, tokenizer is positioned at the next line number */
+  return_line = tokenizer_linenum();
   if(*gosub_depth_cell < UBASIC_MAX_GOSUB_STACK_DEPTH) {
+    /* Push the return line into the gosub stack */
+    gosub_push(return_line);
 
-    /* Push the current return line into the configured gosub stack (memory or internal). */
-    gosub_push(tokenizer_num());
-
-    jump_linenum(linenum);
+    jump_linenum(target_line);
   } else {
-    DEBUG_PRINTF("gosub_statement: gosub stack exhausted.\n");
+    runtime_error("GS", "GOSUB stack overflow", current_line_number);
   }
 }
 /*---------------------------------------------------------------------------*/
 static void return_statement(void){
   accept(TOKENIZER_RETURN);
   if(*gosub_depth_cell > 0) {
-    int32_t retline = gosub_pop();
+    uint32_t retline = gosub_pop();
     jump_linenum(retline);
   } else {
-    DEBUG_PRINTF("return_statement: non-matching return.\n");
+    runtime_error("RS", "RETURN without GOSUB", current_line_number);
   }
 }
 /*---------------------------------------------------------------------------*/
@@ -626,26 +676,32 @@ static void rem_statement(void) {
 /*---------------------------------------------------------------------------*/
 static void next_statement(void){
   int var;
+  uint32_t line;
 
+  line = current_line_number;
   accept(TOKENIZER_NEXT);
   var = tokenizer_variable_num();
+  DEBUG_PRINTF("next_statement: next for variable %d.\n", var);
   accept(TOKENIZER_VARIABLE);
-  if(*for_depth_cell > 0 &&
-     var == (int)for_stack[*for_depth_cell - 1].for_variable_index) {
-    for_state top = for_stack[*for_depth_cell - 1];
-    set_variable(var, get_variable(var) + 1);
-    if(get_variable(var) <= top.to) {
-      jump_linenum(top.line_after_for);
+  if(*for_depth_cell > 0) {
+    if(var == (int)for_stack[*for_depth_cell - 1].for_variable_index) {
+      DEBUG_PRINTF("next_statement: matching next for variable %d.\n", var);
+      for_state top = for_stack[*for_depth_cell - 1];
+      set_variable(var, get_variable(var) + 1);
+      if(get_variable(var) <= top.to) {
+        jump_linenum(top.line_after_for);
+      } else {
+        for_pop();
+        accept(TOKENIZER_LF);
+      }
     } else {
-      for_pop();
-      accept(TOKENIZER_LF);
+      DEBUG_PRINTF("next_statement: ERROR - non-matching next (expected %d, found %d).\n",
+          (int)for_stack[*for_depth_cell - 1].for_variable_index, var);
+      runtime_error("MN", "Non-matching NEXT", line);
     }
   } else {
-    if (*for_depth_cell > 0) {
-      DEBUG_PRINTF("next_statement: non-matching next (expected %d, found %d).\n",
-          (int)for_stack[*for_depth_cell - 1].for_variable_index, var);
-    }
-    accept(TOKENIZER_LF);
+    DEBUG_PRINTF("next_statement: ERROR - next without matching for.\n");
+    runtime_error("NF", "NEXT without FOR", line);
   }
 
 }
@@ -663,12 +719,19 @@ static void for_statement(void) {
   accept(TOKENIZER_LF);
 
   for_state st;
-  st.line_after_for = (int32_t)tokenizer_num();
+  if(tokenizer_token() == TOKENIZER_NUMBER) {
+    st.line_after_for = tokenizer_linenum();
+  } else {
+    DEBUG_PRINTF("for_statement: ERROR - Expected NUMBER token after LF, got %s\n",
+                 tokenizer_token_name(tokenizer_token()));
+    st.line_after_for = 0;
+  }
   st.for_variable_index = (int32_t)for_variable;
   st.to = (int32_t)to;
   for_push(st);
   #if VERBOSE
-    DEBUG_PRINTF("for_statement: new for, var %d to %d.\n", (int)st.for_variable_index, (int)st.to);
+    DEBUG_PRINTF("for_statement: new for, var %d to %d, line_after_for=%u.\n",
+                 (int)st.for_variable_index, (int)st.to, st.line_after_for);
   #endif
   
 }
@@ -744,6 +807,12 @@ static void statement(void){
   case TOKENIZER_END:
     end_statement();
     break;
+  case TOKENIZER_PUSH:
+    push_statement();
+    break;
+  case TOKENIZER_POP:
+    pop_statement();
+    break;
   case TOKENIZER_LET:
     accept(TOKENIZER_LET);
     /* Fall through. */
@@ -755,18 +824,20 @@ static void statement(void){
     break;
   default:
     DEBUG_PRINTF("statement: not implemented %d.\n", token);
-    exit(1);
+    runtime_error("TS", "Unsupported statement", current_line_number);
+    return;
   }
 }
 /*---------------------------------------------------------------------------*/
 static void line_statement(void){
   /* Save position before executing line for resume capability */
   save_position();
+  current_line_number = tokenizer_linenum();
   
   #if VERBOSE
-    DEBUG_PRINTF("----------- Line number %d ---------\n", tokenizer_num());
+    DEBUG_PRINTF("----------- Line number %u ---------\n", current_line_number);
   #endif
-  index_add(tokenizer_num(), tokenizer_pos());
+  index_add(current_line_number, tokenizer_pos());
   accept(TOKENIZER_NUMBER);
   statement();
 }
@@ -784,10 +855,11 @@ static VARIABLE_TYPE get_variable(int varnum){
   return 0;
 }
 /*---------------------------------------------------------------------------*/
-static int32_t gosub_pop(void) {
+static uint32_t gosub_pop(void) {
   int32_t ptr = *gosub_depth_cell;
   if (ptr == 0) {
     DEBUG_PRINTF("gosub_pop: underflow (ptr=0)\n");
+    runtime_error("RS", "RETURN without GOSUB", current_line_number);
     return 0;
   }
   ptr--;
@@ -795,10 +867,11 @@ static int32_t gosub_pop(void) {
   return gosub_stack_mem[ptr];
 }
 /*---------------------------------------------------------------------------*/
-static void gosub_push(int32_t line_num) {
+static void gosub_push(uint32_t line_num) {
   int32_t ptr = *gosub_depth_cell;
   if (ptr >= UBASIC_MAX_GOSUB_STACK_DEPTH) {
     DEBUG_PRINTF("gosub_push: overflow (ptr=%d)\n", (int)ptr);
+    runtime_error("GS", "GOSUB stack overflow", current_line_number);
     return;
   }
   gosub_stack_mem[ptr] = line_num;
@@ -812,6 +885,7 @@ static void for_push(for_state state) {
     *for_depth_cell = depth;
   } else {
     DEBUG_PRINTF("for_push: for stack depth exceeded.\n");
+    runtime_error("FS", "FOR stack overflow", current_line_number);
   }
 }
 /*---------------------------------------------------------------------------*/
@@ -824,8 +898,64 @@ static for_state for_pop(void) {
     return value;
   } else {
     DEBUG_PRINTF("for_pop: for stack underflow.\n");
+    runtime_error("FS", "FOR stack underflow", current_line_number);
     return error_state;
   }
+}
+/*---------------------------------------------------------------------------*/
+static void push_statement(void) {
+  int32_t depth;
+  VARIABLE_TYPE value;
+  accept(TOKENIZER_PUSH);
+  value = expr();
+  if(ended) return;
+  depth = *push_depth_cell;
+  if(depth < UBASIC_MAX_PUSH_STACK_DEPTH) {
+    push_stack_mem[depth++] = (int32_t)value;
+    *push_depth_cell = depth;
+  } else {
+    runtime_error("PS", "PUSH stack overflow", current_line_number);
+    return;
+  }
+  accept(TOKENIZER_LF);
+}
+/*---------------------------------------------------------------------------*/
+static void pop_statement(void) {
+  int32_t depth;
+  int varnum;
+  accept(TOKENIZER_POP);
+  varnum = tokenizer_variable_num();
+  accept(TOKENIZER_VARIABLE);
+  if(ended) return;
+  depth = *push_depth_cell;
+  if(depth > 0) {
+    set_variable(varnum, (VARIABLE_TYPE)push_stack_mem[--depth]);
+    *push_depth_cell = depth;
+  } else {
+    runtime_error("PS", "POP stack underflow", current_line_number);
+    return;
+  }
+  accept(TOKENIZER_LF);
+}
+/*---------------------------------------------------------------------------*/
+void ubasic_set_out_function(out_func func) {
+  out_function = func;
+}
+/*---------------------------------------------------------------------------*/
+void ubasic_set_error_function(err_func func) {
+  error_function = func != NULL ? func : default_error_function;
+}
+/*---------------------------------------------------------------------------*/
+const char *ubasic_last_error_code(void) {
+  return last_error_code;
+}
+/*---------------------------------------------------------------------------*/
+const char *ubasic_last_error_description(void) {
+  return last_error_description;
+}
+/*---------------------------------------------------------------------------*/
+uint32_t ubasic_last_error_line(void) {
+  return last_error_line;
 }
 /*---------------------------------------------------------------------------*/
 
